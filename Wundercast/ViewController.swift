@@ -45,6 +45,9 @@ class ViewController: UIViewController {
 
     var keyTextField: UITextField?
 
+    var cache = [String: Weather]()
+    let maxAttempts = 4
+
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
@@ -85,7 +88,27 @@ class ViewController: UIViewController {
 
         let textSearch = searchInput.flatMap { text in
             return ApiController.shared.currentWeather(city: text ?? "Error")
-                .catchErrorJustReturn(ApiController.Weather.empty)
+                .do(onNext: { data in
+                    if let text = text {
+                        self.cache[text] = data
+                    }
+                }).retryWhen { e in
+                    return e.flatMapWithIndex { (error, attempt) -> Observable<Int> in
+                        print("== retrying after \(attempt + 1) seconds ==")
+                        if attempt >= self.maxAttempts - 1 {
+                            return Observable.error(error)
+                        }
+                        return Observable<Int>.timer(Double(attempt + 1), scheduler:
+                            MainScheduler.instance).take(1)
+                    }
+                }
+                .catchError { error in
+                    if let text = text, let cachedData = self.cache[text] {
+                        return Observable.just(cachedData)
+                    } else {
+                        return Observable.just(ApiController.Weather.empty)
+                    }
+                }
         }
 
         let search = Observable.from([geoSearch, textSearch])
