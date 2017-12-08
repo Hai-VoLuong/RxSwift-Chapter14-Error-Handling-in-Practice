@@ -92,16 +92,12 @@ class ViewController: UIViewController {
                     if let text = text {
                         self.cache[text] = data
                     }
-                }).retryWhen { e in
-                    return e.flatMapWithIndex { (error, attempt) -> Observable<Int> in
-                        print("== retrying after \(attempt + 1) seconds ==")
-                        if attempt >= self.maxAttempts - 1 {
-                            return Observable.error(error)
-                        }
-                        return Observable<Int>.timer(Double(attempt + 1), scheduler:
-                            MainScheduler.instance).take(1)
+                }, onError: { [weak self] e in
+                    guard let strongSelf = self else { return }
+                    DispatchQueue.main.sync {
+                        strongSelf.showError(error: e)
                     }
-                }
+                })
                 .catchError { error in
                     if let text = text, let cachedData = self.cache[text] {
                         return Observable.just(cachedData)
@@ -144,6 +140,19 @@ class ViewController: UIViewController {
         running.drive(humidityLabel.rx.isHidden).addDisposableTo(bag)
         running.drive(cityNameLabel.rx.isHidden).addDisposableTo(bag)
 
+    }
+
+    func showError (error e: Error) {
+        if let e = e as? ApiController.ApiError {
+            switch (e) {
+            case .cityNotFound:
+                InfoView.showIn(viewController: self, message: "City Name is invalid")
+            case .serverFailure:
+                InfoView.showIn(viewController: self, message: "Server error")
+            }
+        } else {
+            InfoView.showIn(viewController: self, message: "An error occurred")
+        }
     }
 
     override func viewDidAppear(_ animated: Bool) {
